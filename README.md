@@ -1,6 +1,18 @@
 # 🚀 NestJS API
 
-A scalable and modular API built with [NestJS](https://nestjs.com/), following best practices for structure, testing, and documentation.
+A task scheduling REST API that lets users create tasks to be completed at a
+particular time. You can think of this as an application similar to a to-do app and a
+reminders app.
+
+# Functional Requirements
+- NestJS and Typescript
+- With CRUD Endpoints for Managing Tasks
+- SQLite for Database for easier set-up
+
+## Additional Features
+- Task hiarchy where a task is dependent on the other, meaning you cannot complete specific task if it is has a prerequisite task to be completed.
+- E2E test included for all endpoints
+- OpenUI/Swagger Docs available
 
 ## 📦 Requirements
 
@@ -43,3 +55,5 @@ Try out any endpoint with real input/output.
 ✅ End-to-End (E2E) Testing
 # Run all e2e tests
 npm run test:e2e
+
+
