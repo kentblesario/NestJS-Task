@@ -14,7 +14,7 @@ import { TaskEntity } from './task/task.entity';
       type: 'sqlite',
       database: 'taskdb.sqlite',
       entities: [TaskEntity],
-      synchronize: true, // ✅ creates tables automatically (dev only)
+      synchronize: true,
     }),
   ],
   controllers: [AppController],

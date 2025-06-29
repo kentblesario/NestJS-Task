@@ -45,7 +45,7 @@ describe('GET /tasks/:id', () => {
   });
 
   it('It should return 400 for malformed UUID', async () => {
-    const res = await request(appHttp).get(`/tasks/not-a-uuid`).expect(404);
+    const res = await request(appHttp).get(`/tasks/not-a-uuid`).expect(400);
 
     const body = res.body as { message?: string };
     expect(

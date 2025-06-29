@@ -7,7 +7,7 @@ import {
   JoinTable,
   ManyToMany,
 } from 'typeorm';
-import { ITaskPriority } from './task.interface';
+import { ITaskPriority, ITaskStatus } from './task.interface';
 
 @Entity()
 export class TaskEntity {
@@ -29,13 +29,16 @@ export class TaskEntity {
   @Column({ type: 'text', default: ITaskPriority.Low, nullable: true })
   priority?: ITaskPriority;
 
+  @Column({ type: 'text', default: ITaskStatus.NOT_STARTED, nullable: true })
+  taskStatus?: ITaskStatus;
+
   @CreateDateColumn({ type: 'datetime' })
   createdAt: Date;
 
   @UpdateDateColumn({ type: 'datetime' })
   updatedAt: Date;
 
-  @UpdateDateColumn({ type: 'datetime', nullable: true })
+  @Column({ type: 'datetime', nullable: true })
   completedAt: Date | null;
 
   @ManyToMany(() => TaskEntity, (task) => task.dependents)

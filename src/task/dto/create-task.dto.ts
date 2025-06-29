@@ -9,7 +9,7 @@ import {
   IsDateString,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ITaskPriority } from '../task.interface';
+import { ITaskPriority, ITaskStatus } from '../task.interface';
 
 export class CreateTaskDto {
   @ApiProperty({ example: 'Finish report', description: 'Title of the task' })
@@ -73,4 +73,13 @@ export class CreateTaskDto {
   @IsArray()
   @IsUUID('all', { each: true })
   dependents?: string[];
+
+  @ApiPropertyOptional({
+    enum: ITaskStatus,
+    description: 'Current status of the task',
+    example: ITaskStatus.NOT_STARTED,
+  })
+  @IsOptional()
+  @IsEnum(ITaskStatus)
+  status?: ITaskStatus;
 }

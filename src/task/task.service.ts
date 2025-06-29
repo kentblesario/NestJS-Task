@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ITask } from './task.interface';
+import { ITask, ITaskStatus } from './task.interface';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { In, Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -44,6 +44,32 @@ export class TaskService {
     return entities;
   }
 
+  private validateDueDateConstraints(
+    dueDate: Date,
+    prerequisites: ITask[],
+    dependents: ITask[],
+  ): void {
+    for (const parent of prerequisites) {
+      if (!parent.dueDate) continue;
+
+      if (dueDate >= parent.dueDate) {
+        throw new BadRequestException(
+          `Due date must be earlier than prerequisite task "${parent.title}" due date (${parent.dueDate.toISOString()})`,
+        );
+      }
+    }
+
+    for (const child of dependents) {
+      if (!child.dueDate) continue;
+
+      if (dueDate <= child.dueDate) {
+        throw new BadRequestException(
+          `Due date must be later than dependent task "${child.title}" due date (${child.dueDate.toISOString()})`,
+        );
+      }
+    }
+  }
+
   async getAllTasks(): Promise<ITask[]> {
     return this.taskRepo.find({
       relations: ['prerequisites', 'dependents'],
@@ -51,7 +77,7 @@ export class TaskService {
   }
 
   async createTask(dto: CreateTaskDto): Promise<ITask> {
-    const { title, description, prerequisites, dependents } = dto;
+    const { title, description, dueDate, prerequisites, dependents } = dto;
 
     const foundPrereqs = await this.validateAndLoadRelations(
       prerequisites,
@@ -62,11 +88,25 @@ export class TaskService {
       'dependents',
     );
 
+    if (dueDate) {
+      this.validateDueDateConstraints(
+        new Date(dueDate),
+        foundPrereqs,
+        foundDependents,
+      );
+    }
+
+    // Set status to BLOCKED if there are prerequisites, otherwise NOT_STARTED
+    const taskStatus =
+      foundPrereqs.length > 0 ? ITaskStatus.BLOCKED : ITaskStatus.NOT_STARTED;
+
     const task = this.taskRepo.create({
       title,
       description,
+      dueDate: dueDate,
       prerequisites: foundPrereqs,
       dependents: foundDependents,
+      taskStatus,
     });
 
     return this.taskRepo.save(task);
@@ -107,11 +147,21 @@ export class TaskService {
       );
     }
 
+    const newDueDate = data.dueDate ? new Date(data.dueDate) : task.dueDate;
+
+    if (newDueDate) {
+      this.validateDueDateConstraints(
+        newDueDate,
+        task.prerequisites,
+        task.dependents,
+      );
+    }
+
     Object.assign(task, {
       title: data.title ?? task.title,
       description: data.description ?? task.description,
       completed: data.completed ?? task.completed,
-      dueDate: data.dueDate ?? task.dueDate,
+      dueDate: newDueDate,
       priority: data.priority ?? task.priority,
       completedAt: data.completed ? new Date() : task.completedAt,
     });
@@ -120,36 +170,92 @@ export class TaskService {
   }
 
   async remove(id: string): Promise<void> {
-    const task = await this.findOne(id);
-    await this.taskRepo.delete(task.id);
-  }
-
-  async complete(id: string, completed: boolean): Promise<ITask> {
     const task = await this.taskRepo.findOne({
       where: { id },
-      relations: ['prerequisites'],
+      relations: ['dependents'],
     });
 
-    if (!task) throw new NotFoundException(`Task ${id} not found`);
-    console.log('task', task);
-    console.log('id', id);
-    console.log('completed', completed);
+    if (!task) {
+      throw new NotFoundException(`Task with ID ${id} not found.`);
+    }
 
-    // Only allow marking as completed if all prerequisites are done
-    if (completed && task.prerequisites?.length) {
-      const allPrereqsDone = task.prerequisites.every((t) => t.completed);
-      console.log('allPrereqsDone', allPrereqsDone);
+    if (task.dependents && task.dependents.length > 0) {
+      throw new BadRequestException(
+        'Cannot delete task: it has dependent tasks. Remove or update the dependents first.',
+      );
+    }
 
+    await this.taskRepo.delete(id);
+  }
+
+  async updateStatus(id: string, taskStatus: ITaskStatus): Promise<ITask> {
+    const task = await this.taskRepo.findOne({
+      where: { id },
+      relations: ['prerequisites', 'dependents'],
+    });
+
+    if (!task) {
+      throw new NotFoundException(`Task ${id} not found`);
+    }
+
+    if (!Object.values(ITaskStatus).includes(taskStatus)) {
+      throw new BadRequestException(`Invalid task status: ${taskStatus}`);
+    }
+
+    if (
+      task.taskStatus === ITaskStatus.NOT_STARTED &&
+      taskStatus === ITaskStatus.COMPLETED
+    ) {
+      throw new BadRequestException(
+        'Cannot change status directly from "NOT_STARTED" to "COMPLETED". Please set status to "IN_PROGRESS" first.',
+      );
+    }
+
+    // Validate prerequisites before allowing completion
+    if (taskStatus === ITaskStatus.COMPLETED && task.prerequisites?.length) {
+      const allPrereqsDone = task.prerequisites.every(
+        (t) => t.taskStatus === ITaskStatus.COMPLETED,
+      );
       if (!allPrereqsDone) {
         throw new BadRequestException(
-          'Cannot complete task: prerequisites not completed.',
+          'Cannot complete task: prerequisites are not all completed.',
         );
       }
     }
 
-    task.completed = completed;
-    task.completedAt = completed ? new Date() : null;
+    task.taskStatus = taskStatus;
+    task.completedAt = taskStatus === ITaskStatus.COMPLETED ? new Date() : null;
 
-    return this.taskRepo.save(task);
+    await this.taskRepo.save(task);
+
+    // If completed, update dependents that are BLOCKED to NOT_STARTED
+    if (taskStatus === ITaskStatus.COMPLETED && task.dependents?.length) {
+      for (const dep of task.dependents) {
+        // Reload the dependent with its prerequisites
+        const depWithPrereqs = await this.taskRepo.findOne({
+          where: { id: dep.id },
+          relations: ['prerequisites'],
+        });
+        if (
+          depWithPrereqs &&
+          depWithPrereqs.taskStatus === ITaskStatus.BLOCKED &&
+          depWithPrereqs.prerequisites.length > 0 &&
+          depWithPrereqs.prerequisites.every(
+            (prereq) => prereq.taskStatus === ITaskStatus.COMPLETED,
+          )
+        ) {
+          depWithPrereqs.taskStatus = ITaskStatus.NOT_STARTED;
+          await this.taskRepo.save(depWithPrereqs);
+        }
+      }
+    }
+
+    // Reload and return the updated task with fresh relations
+    const updatedTask = await this.taskRepo.findOne({
+      where: { id: task.id },
+      relations: ['prerequisites', 'dependents'],
+    });
+
+    return updatedTask!;
   }
 }

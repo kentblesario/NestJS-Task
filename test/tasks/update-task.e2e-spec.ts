@@ -8,8 +8,8 @@ describe('POST /tasks', () => {
   let app: INestApplication;
   let appHttp: App;
   beforeAll(async () => {
-    app = await createTestApp(); // Shared test app setup
-    appHttp = app.getHttpServer() as App; // Cast to App type for supertest
+    app = await createTestApp();
+    appHttp = app.getHttpServer() as App;
   });
 
   afterAll(async () => {
@@ -102,5 +102,73 @@ describe('POST /tasks', () => {
         typeof body.message === 'string' || Array.isArray(body.message),
       ).toBe(true);
     }
+  });
+
+  it('It should allow updating a task with a valid dueDate before its prerequisite', async () => {
+    const parentRes = await request(appHttp)
+      .post('/tasks')
+      .send({
+        title: 'Write documentation',
+        dueDate: '2025-07-10T10:00:00.000Z',
+      })
+      .expect(201);
+
+    const parent = parentRes.body as ITask;
+
+    const childRes = await request(appHttp)
+      .post('/tasks')
+      .send({
+        title: 'Submit draft',
+      })
+      .expect(201);
+
+    const child = childRes.body as ITask;
+
+    const patchRes = await request(appHttp)
+      .patch(`/tasks/${child.id}`)
+      .send({
+        dueDate: '2025-07-08T10:00:00.000Z',
+        prerequisites: [parent.id],
+      })
+      .expect(200);
+
+    const updatedChild: ITask = patchRes.body as ITask;
+    expect(updatedChild.prerequisites?.[0]?.id).toBe(parent.id);
+    expect(updatedChild.dueDate).toBe('2025-07-08T10:00:00.000Z');
+  });
+
+  it('It should reject updating a task with a dueDate later than its prerequisite', async () => {
+    const parentRes = await request(appHttp)
+      .post('/tasks')
+      .send({
+        title: 'Prepare training deck',
+        dueDate: '2025-07-05T12:00:00.000Z',
+      })
+      .expect(201);
+
+    const parent = parentRes.body as ITask;
+
+    const childRes = await request(appHttp)
+      .post('/tasks')
+      .send({
+        title: 'Review slides',
+        dueDate: '2025-07-04T12:00:00.000Z',
+      })
+      .expect(201);
+
+    const child = childRes.body as ITask;
+
+    const patchRes = await request(appHttp)
+      .patch(`/tasks/${child.id}`)
+      .send({
+        dueDate: '2025-07-06T12:00:00.000Z',
+        prerequisites: [parent.id],
+      })
+      .expect(400);
+
+    const patchBody = patchRes.body as { message?: string };
+    expect(patchBody.message).toContain(
+      'Due date must be earlier than prerequisite task',
+    );
   });
 });
