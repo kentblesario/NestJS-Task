@@ -96,7 +96,6 @@ export class TaskService {
       );
     }
 
-    // Set status to BLOCKED if there are prerequisites, otherwise NOT_STARTED
     const taskStatus =
       foundPrereqs.length > 0 ? ITaskStatus.BLOCKED : ITaskStatus.NOT_STARTED;
 
@@ -211,7 +210,6 @@ export class TaskService {
       );
     }
 
-    // Validate prerequisites before allowing completion
     if (taskStatus === ITaskStatus.COMPLETED && task.prerequisites?.length) {
       const allPrereqsDone = task.prerequisites.every(
         (t) => t.taskStatus === ITaskStatus.COMPLETED,
@@ -228,10 +226,8 @@ export class TaskService {
 
     await this.taskRepo.save(task);
 
-    // If completed, update dependents that are BLOCKED to NOT_STARTED
     if (taskStatus === ITaskStatus.COMPLETED && task.dependents?.length) {
       for (const dep of task.dependents) {
-        // Reload the dependent with its prerequisites
         const depWithPrereqs = await this.taskRepo.findOne({
           where: { id: dep.id },
           relations: ['prerequisites'],
@@ -250,7 +246,6 @@ export class TaskService {
       }
     }
 
-    // Reload and return the updated task with fresh relations
     const updatedTask = await this.taskRepo.findOne({
       where: { id: task.id },
       relations: ['prerequisites', 'dependents'],

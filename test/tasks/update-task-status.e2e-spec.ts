@@ -126,7 +126,7 @@ describe('PATCH /tasks/:id/status', () => {
       .patch(`/tasks/${blocked.id}/status`)
       .send({ taskStatus: 'IN_PROGRESS' });
 
-    expect(res.statusCode).toBe(200); // can move to in progress
+    expect(res.statusCode).toBe(200);
 
     const fail = await request(appHttp)
       .patch(`/tasks/${blocked.id}/status`)
@@ -138,14 +138,12 @@ describe('PATCH /tasks/:id/status', () => {
   });
 
   it('It should unblock dependent task once prerequisites are completed', async () => {
-    // Create prerequisite task
     const prereqRes = await request(appHttp)
       .post('/tasks')
       .send({ title: 'Complete me first' })
       .expect(201);
     const prereq: ITask = prereqRes.body as ITask;
 
-    // Create dependent task with prereq
     const dependentRes = await request(appHttp)
       .post('/tasks')
       .send({ title: 'Blocked until done', prerequisites: [prereq.id] })
@@ -154,30 +152,25 @@ describe('PATCH /tasks/:id/status', () => {
 
     expect(dependent.taskStatus).toBe('BLOCKED');
 
-    // Move prereq to IN_PROGRESS
     const inProgressRes = await request(appHttp)
       .patch(`/tasks/${prereq.id}/status`)
       .send({ taskStatus: 'IN_PROGRESS' });
 
     expect(inProgressRes.statusCode).toBe(200);
 
-    // Move prereq to COMPLETED
     await request(appHttp)
       .patch(`/tasks/${prereq.id}/status`)
       .send({ taskStatus: 'COMPLETED' })
       .expect(200);
 
-    // Confirm prereq is marked COMPLETED
     const prereqCheck = await request(appHttp)
       .get(`/tasks/${prereq.id}`)
       .expect(200);
     const prereqBody: ITask = prereqCheck.body as ITask;
     expect(prereqBody.taskStatus).toBe('COMPLETED');
 
-    // Optional: short wait to ensure DB consistency
     await new Promise((r) => setTimeout(r, 50));
 
-    // Reload dependent to check if status was unblocked
     const checkRes = await request(appHttp)
       .get(`/tasks/${dependent.id}`)
       .expect(200);
